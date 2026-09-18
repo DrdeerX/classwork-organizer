@@ -480,7 +480,7 @@ const CLASS_COLORS = ['#6a5cff','#ff6b8b','#ff9f43','#2fb344','#22b8cf','#e64980
 const SUPABASE_URL = 'https://fqtxkjgggpbkjurrrbve.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_aGbgPwbYxKPeEEl-Ukz_yA_B4x3UCWm';
 const sb = (typeof window.supabase !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT'))
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } })
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
 let _cachedUid = null;
@@ -2820,12 +2820,32 @@ document.getElementById('auth-email').addEventListener('keydown', e=>{ if(e.key=
 document.addEventListener('click', e=>{
   if(e.target.closest('[data-action="auth-submit"]')) tryAuthSubmit();
   if(e.target.closest('[data-action="auth-toggle-mode"]')){ errEl_reset(); setAuthMode(authMode==='signin' ? 'signup' : 'signin'); }
-  if(e.target.closest('[data-action="sign-out"]')){ _cachedUid = null; sb.auth.signOut().then(()=>location.reload()); }
+  if(e.target.closest('[data-action="sign-out"]')){ signOutNow(); }
 });
 function errEl_reset(){ const e=document.getElementById('lock-error'); e.style.color=''; }
+const IDLE_TIMEOUT_MS = 15*60*1000;
+let _idleTimer = null;
+function signOutNow(){
+  _cachedUid = null;
+  stopIdleTimer();
+  sb.auth.signOut().then(()=>location.reload());
+}
+function resetIdleTimer(){
+  clearTimeout(_idleTimer);
+  _idleTimer = setTimeout(signOutNow, IDLE_TIMEOUT_MS);
+}
+function startIdleTimer(){
+  ['mousemove','keydown','click','touchstart','scroll'].forEach(ev=>document.addEventListener(ev, resetIdleTimer, {passive:true}));
+  resetIdleTimer();
+}
+function stopIdleTimer(){
+  clearTimeout(_idleTimer);
+  _idleTimer = null;
+}
 async function enterApp(){
   document.getElementById('lock-screen').style.display = 'none';
   document.getElementById('app').style.display = '';
+  startIdleTimer();
   await boot();
 }
 (async function start(){
