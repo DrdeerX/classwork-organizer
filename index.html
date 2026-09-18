@@ -357,7 +357,7 @@
   <div class="lock-box">
     <h1 id="auth-title">Sign in</h1>
     <p id="auth-subtitle">Your classes and files stay tied to your account</p>
-    <input type="email" id="auth-email" autocomplete="username" placeholder="Email">
+    <input type="text" id="auth-email" autocomplete="username" placeholder="Username" autocapitalize="off" autocorrect="off">
     <input type="password" id="auth-password" autocomplete="current-password" placeholder="Password">
     <button data-action="auth-submit" id="auth-submit-btn">Sign in</button>
     <div class="lock-error" id="lock-error"></div>
@@ -2855,27 +2855,25 @@ function setAuthMode(mode){
     : 'Have an account? <a data-action="auth-toggle-mode">Sign in</a>';
   document.getElementById('lock-error').textContent = '';
 }
+function usernameToEmail(username){
+  const clean = username.toLowerCase().replace(/[^a-z0-9_.-]/g,'');
+  return `${clean}@classwork-organizer.local`;
+}
 async function tryAuthSubmit(){
-  const email = document.getElementById('auth-email').value.trim();
+  const usernameRaw = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value;
   const errEl = document.getElementById('lock-error');
   errEl.textContent = '';
-  if(!email || !password){ errEl.textContent = 'Enter email and password'; return; }
+  if(!usernameRaw || !password){ errEl.textContent = 'Enter username and password'; return; }
+  if(!/^[a-zA-Z0-9_.-]{3,}$/.test(usernameRaw)){ errEl.textContent = 'Username: 3+ chars, letters/numbers/._- only'; return; }
+  const email = usernameToEmail(usernameRaw);
   const btn = document.getElementById('auth-submit-btn');
   btn.disabled = true;
   try{
     const { error } = authMode==='signin'
       ? await sb.auth.signInWithPassword({ email, password })
-      : await sb.auth.signUp({ email, password, options: { emailRedirectTo: window.location.href.split('#')[0] } });
+      : await sb.auth.signUp({ email, password, options: { data: { username: usernameRaw } } });
     if(error){ errEl.textContent = error.message; return; }
-    if(authMode==='signup'){
-      const { data: sessionData } = await sb.auth.getSession();
-      if(!sessionData.session){
-        errEl.textContent = 'Account created — check your email to confirm, then sign in.';
-        setAuthMode('signin');
-        return;
-      }
-    }
     await enterApp();
   }finally{
     btn.disabled = false;
