@@ -994,6 +994,75 @@ function wordsToNumber(phrase){
   return matched ? (current || null) : null;
 }
 
+const DAY_ALIASES = [
+  [0, ['sunday','sun','pazar','paz']],
+  [1, ['monday','mon','pazartesi','pzt','pt']],
+  [2, ['tuesday','tue','tues','sali','salı','sal']],
+  [3, ['wednesday','wed','carsamba','çarşamba','car','çar']],
+  [4, ['thursday','thu','thur','thurs','persembe','perşembe','per']],
+  [5, ['friday','fri','cuma','cum']],
+  [6, ['saturday','sat','cumartesi','cmt','cts']],
+];
+function findDaysInLine(lowerLine){
+  const found = new Set();
+  for(const [idx, aliases] of DAY_ALIASES){
+    for(const alias of aliases){
+      const re = new RegExp('(^|[^a-zçğıöşü])' + alias + "'?s?" + '([^a-zçğıöşü]|$)', 'i');
+      if(re.test(lowerLine)){ found.add(idx); break; }
+    }
+  }
+  return [...found];
+}
+function extractClassScheduleFromText(text){
+  const timeRe = /(\d{1,2})[:.](\d{2})\s*(?:-|–|—|to|ile)\s*(\d{1,2})[:.](\d{2})/;
+  const lines = text.split(/\n+/);
+  const results = [];
+  for(const line of lines){
+    const tm = line.match(timeRe);
+    if(!tm) continue;
+    const startTime = `${tm[1].padStart(2,'0')}:${tm[2]}`;
+    const endTime = `${tm[3].padStart(2,'0')}:${tm[4]}`;
+    const sh = parseInt(tm[1]), eh = parseInt(tm[3]);
+    if(sh>23 || eh>23 || parseInt(tm[2])>59 || parseInt(tm[4])>59) continue;
+    const days = findDaysInLine(line.toLowerCase());
+    if(!days.length) continue;
+    for(const d of days) results.push({day:d, startTime, endTime});
+  }
+  const seen = new Set();
+  return results.filter(r=>{
+    const key = `${r.day}|${r.startTime}|${r.endTime}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+async function autoScheduleFromSyllabus(c, fileRec){
+  if(!fileRec.extractedText) return;
+  const found = extractClassScheduleFromText(fileRec.extractedText);
+  if(!found.length) return;
+  const byTime = new Map();
+  for(const f of found){
+    const key = `${f.startTime}|${f.endTime}`;
+    if(!byTime.has(key)) byTime.set(key, []);
+    byTime.get(key).push(f.day);
+  }
+  for(const [key, days] of byTime){
+    const [startTime, endTime] = key.split('|');
+    const alreadyExists = state.events.some(e=>e.kind==='weekly' && e.classId===c.id
+      && e.startTime===startTime && e.endTime===endTime
+      && days.every(d=>e.days.includes(d)) && e.days.every(d=>days.includes(d)));
+    if(alreadyExists) continue;
+    const ev = {
+      id: uid(), createdAt: Date.now(), title: c.name, kind:'weekly',
+      days: days.sort((a,b)=>a-b), startTime, endTime, location:'', color: c.color,
+      recurFrom:null, recurUntil:null, classId: c.id, auto:true, sourceFileId: fileRec.id,
+    };
+    await dbPut('events', ev);
+    state.events.push(ev);
+    toast(`Added ${c.name} to Schedule (${days.map(d=>WEEKDAY_NAMES[d]).join('/')} ${startTime}–${endTime})`);
+  }
+}
+
 function buildSyllabusSummary(text){
   const lines = text.split(/\n+/).map(l=>l.trim()).filter(Boolean);
   const sentences = splitSentences(text);
@@ -2342,6 +2411,10 @@ function openUploadModal(presetCategory, initialFiles){
           await dbPut('files', rec);
           const cardEl = document.getElementById('file-'+rec.id);
           if(cardEl) cardEl.outerHTML = fileCardHtml(rec);
+          if(rec.category==='syllabus' && rec.extractedText){
+            await autoScheduleFromSyllabus(c, rec);
+            if(state.activeView==='schedule') renderSchedule();
+          }
         });
       }
     }
