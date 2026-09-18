@@ -486,12 +486,12 @@ const CLASS_COLORS = ['#6a5cff','#ff6b8b','#ff9f43','#2fb344','#22b8cf','#e64980
 /* ---------- Supabase layer ---------- */
 const SUPABASE_URL = 'https://fqtxkjgggpbkjurrrbve.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_aGbgPwbYxKPeEEl-Ukz_yA_B4x3UCWm';
-const supabase = (typeof window.supabase !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT'))
+const sb = (typeof window.supabase !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT'))
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
 async function currentUserId(){
-  const { data } = await supabase.auth.getSession();
+  const { data } = await sb.auth.getSession();
   if(!data.session) throw new Error('Not signed in');
   return data.session.user.id;
 }
@@ -503,7 +503,7 @@ function rowToObject(row, keyField){
 async function dbGetAll(store, indexName, query){
   const uid = await currentUserId();
   const keyField = store==='meta' ? 'key' : 'id';
-  let q = supabase.from(store).select('*').eq('user_id', uid);
+  let q = sb.from(store).select('*').eq('user_id', uid);
   if(indexName === 'classId') q = q.eq('class_id', query);
   const { data, error } = await q;
   if(error) throw error;
@@ -511,7 +511,7 @@ async function dbGetAll(store, indexName, query){
   if(store === 'files'){
     rows = await Promise.all(rows.map(async r=>{
       if(r.storagePath){
-        const { data: blobData, error: dlErr } = await supabase.storage.from('files').download(r.storagePath);
+        const { data: blobData, error: dlErr } = await sb.storage.from('files').download(r.storagePath);
         if(!dlErr) r.blob = blobData;
       }
       return r;
@@ -527,14 +527,14 @@ async function dbPut(store, value){
   delete data.classId;
   if(store === 'files' && data.blob instanceof Blob){
     const path = `${uid}/${value.id}`;
-    const { error: upErr } = await supabase.storage.from('files').upload(path, data.blob, { upsert: true });
+    const { error: upErr } = await sb.storage.from('files').upload(path, data.blob, { upsert: true });
     if(upErr) throw upErr;
     data.storagePath = path;
     delete data.blob;
   }
   const row = { [keyField]: value[keyField], user_id: uid, data };
   if(store === 'files' || store === 'questions') row.class_id = value.classId ?? null;
-  const { error } = await supabase.from(store).upsert(row);
+  const { error } = await sb.from(store).upsert(row);
   if(error) throw error;
   return value;
 }
@@ -542,21 +542,21 @@ async function dbDelete(store, key){
   const uid = await currentUserId();
   const keyField = store==='meta' ? 'key' : 'id';
   if(store === 'files'){
-    const { data } = await supabase.from('files').select('data').eq('id', key).eq('user_id', uid).maybeSingle();
-    if(data && data.data && data.data.storagePath) await supabase.storage.from('files').remove([data.data.storagePath]);
+    const { data } = await sb.from('files').select('data').eq('id', key).eq('user_id', uid).maybeSingle();
+    if(data && data.data && data.data.storagePath) await sb.storage.from('files').remove([data.data.storagePath]);
   }
-  const { error } = await supabase.from(store).delete().eq(keyField, key).eq('user_id', uid);
+  const { error } = await sb.from(store).delete().eq(keyField, key).eq('user_id', uid);
   if(error) throw error;
 }
 async function dbDeleteWhere(store, indexName, value){
   const uid = await currentUserId();
   const col = indexName === 'classId' ? 'class_id' : indexName;
   if(store === 'files'){
-    const { data } = await supabase.from('files').select('data').eq(col, value).eq('user_id', uid);
+    const { data } = await sb.from('files').select('data').eq(col, value).eq('user_id', uid);
     const paths = (data||[]).map(r=>r.data && r.data.storagePath).filter(Boolean);
-    if(paths.length) await supabase.storage.from('files').remove(paths);
+    if(paths.length) await sb.storage.from('files').remove(paths);
   }
-  const { error } = await supabase.from(store).delete().eq(col, value).eq('user_id', uid);
+  const { error } = await sb.from(store).delete().eq(col, value).eq('user_id', uid);
   if(error) throw error;
 }
 
@@ -2854,11 +2854,11 @@ async function tryAuthSubmit(){
   btn.disabled = true;
   try{
     const { error } = authMode==='signin'
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password });
+      ? await sb.auth.signInWithPassword({ email, password })
+      : await sb.auth.signUp({ email, password });
     if(error){ errEl.textContent = error.message; return; }
     if(authMode==='signup'){
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData } = await sb.auth.getSession();
       if(!sessionData.session){
         errEl.textContent = 'Account created — check your email to confirm, then sign in.';
         setAuthMode('signin');
@@ -2875,7 +2875,7 @@ document.getElementById('auth-email').addEventListener('keydown', e=>{ if(e.key=
 document.addEventListener('click', e=>{
   if(e.target.closest('[data-action="auth-submit"]')) tryAuthSubmit();
   if(e.target.closest('[data-action="auth-toggle-mode"]')) setAuthMode(authMode==='signin' ? 'signup' : 'signin');
-  if(e.target.closest('[data-action="sign-out"]')){ supabase.auth.signOut().then(()=>location.reload()); }
+  if(e.target.closest('[data-action="sign-out"]')){ sb.auth.signOut().then(()=>location.reload()); }
 });
 async function enterApp(){
   document.getElementById('lock-screen').style.display = 'none';
@@ -2890,7 +2890,7 @@ async function enterApp(){
     );
     return;
   }
-  const { data } = await supabase.auth.getSession();
+  const { data } = await sb.auth.getSession();
   if(data.session){
     await enterApp();
   }else{
