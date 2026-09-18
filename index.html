@@ -337,16 +337,20 @@
   #lock-screen input{ width:100%; box-sizing:border-box; padding:10px 12px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:14px; margin-bottom:10px; }
   #lock-screen button{ width:100%; padding:10px 12px; border-radius:var(--radius-sm); border:none; background:var(--accent); color:var(--accent-contrast); font-size:14px; font-weight:600; cursor:pointer; }
   #lock-screen .lock-error{ color:var(--danger); font-size:12.5px; margin-top:10px; min-height:16px; }
+  #lock-screen .lock-switch{ font-size:12.5px; color:var(--text-dim); margin-top:14px; }
+  #lock-screen .lock-switch a{ color:var(--accent); cursor:pointer; text-decoration:underline; }
 </style>
 </head>
 <body>
 <div id="lock-screen">
   <div class="lock-box">
-    <h1>Locked</h1>
-    <p>Enter password to continue</p>
-    <input type="password" id="lock-password" autocomplete="off" placeholder="Password">
-    <button data-action="lock-submit">Unlock</button>
+    <h1 id="auth-title">Sign in</h1>
+    <p id="auth-subtitle">Your classes and files stay tied to your account</p>
+    <input type="email" id="auth-email" autocomplete="username" placeholder="Email">
+    <input type="password" id="auth-password" autocomplete="current-password" placeholder="Password">
+    <button data-action="auth-submit" id="auth-submit-btn">Sign in</button>
     <div class="lock-error" id="lock-error"></div>
+    <div class="lock-switch" id="auth-switch">No account? <a data-action="auth-toggle-mode">Sign up</a></div>
   </div>
 </div>
 <div id="app" style="display:none">
@@ -385,9 +389,9 @@
         <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
         <span id="theme-toggle-label">Toggle theme</span>
       </button>
-      <button class="theme-toggle" data-action="lock-app">
+      <button class="theme-toggle" data-action="sign-out">
         <svg class="icon" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-        <span>Lock</span>
+        <span>Sign out</span>
       </button>
     </div>
   </aside>
@@ -409,6 +413,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 (function(){
   try{
@@ -478,72 +483,81 @@ function guessCategory(filename){
 }
 const CLASS_COLORS = ['#6a5cff','#ff6b8b','#ff9f43','#2fb344','#22b8cf','#e64980','#845ef7','#fab005'];
 
-/* ---------- IndexedDB layer ---------- */
-const DB_NAME='classworkOrganizerDB', DB_VERSION=4;
-let _dbPromise=null;
-function openDB(){
-  if(_dbPromise) return _dbPromise;
-  _dbPromise = new Promise((resolve,reject)=>{
-    let req;
-    try{
-      req = indexedDB.open(DB_NAME, DB_VERSION);
-    }catch(e){ reject(e); return; }
-    req.onupgradeneeded = (e)=>{
-      const db = e.target.result;
-      if(!db.objectStoreNames.contains('classes')) db.createObjectStore('classes',{keyPath:'id'});
-      if(!db.objectStoreNames.contains('files')){
-        const s = db.createObjectStore('files',{keyPath:'id'});
-        s.createIndex('classId','classId');
-      }
-      if(!db.objectStoreNames.contains('questions')){
-        const s = db.createObjectStore('questions',{keyPath:'id'});
-        s.createIndex('classId','classId');
-      }
-      if(!db.objectStoreNames.contains('events')){
-        db.createObjectStore('events',{keyPath:'id'});
-      }
-      if(!db.objectStoreNames.contains('transactions')){
-        db.createObjectStore('transactions',{keyPath:'id'});
-      }
-      if(!db.objectStoreNames.contains('goals')){
-        db.createObjectStore('goals',{keyPath:'id'});
-      }
-      if(!db.objectStoreNames.contains('meta')){
-        db.createObjectStore('meta',{keyPath:'key'});
-      }
-    };
-    req.onsuccess = ()=>resolve(req.result);
-    req.onerror = ()=>reject(req.error || new Error('IndexedDB failed to open'));
-    req.onblocked = ()=>reject(new Error('IndexedDB open request was blocked (try closing other tabs with this page open)'));
-  });
-  return _dbPromise;
+/* ---------- Supabase layer ---------- */
+const SUPABASE_URL = 'https://fqtxkjgggpbkjurrrbve.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_aGbgPwbYxKPeEEl-Ukz_yA_B4x3UCWm';
+const supabase = (typeof window.supabase !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT'))
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+async function currentUserId(){
+  const { data } = await supabase.auth.getSession();
+  if(!data.session) throw new Error('Not signed in');
+  return data.session.user.id;
 }
-function reqp(req){ return new Promise((res,rej)=>{ req.onsuccess=()=>res(req.result); req.onerror=()=>rej(req.error); }); }
+function rowToObject(row, keyField){
+  const obj = { ...row.data, [keyField]: row[keyField] };
+  if('class_id' in row && row.class_id != null) obj.classId = row.class_id;
+  return obj;
+}
 async function dbGetAll(store, indexName, query){
-  const db = await openDB();
-  const t = db.transaction(store,'readonly');
-  const s = indexName ? t.objectStore(store).index(indexName) : t.objectStore(store);
-  return reqp(query!==undefined ? s.getAll(query) : s.getAll());
+  const uid = await currentUserId();
+  const keyField = store==='meta' ? 'key' : 'id';
+  let q = supabase.from(store).select('*').eq('user_id', uid);
+  if(indexName === 'classId') q = q.eq('class_id', query);
+  const { data, error } = await q;
+  if(error) throw error;
+  let rows = data.map(r=>rowToObject(r, keyField));
+  if(store === 'files'){
+    rows = await Promise.all(rows.map(async r=>{
+      if(r.storagePath){
+        const { data: blobData, error: dlErr } = await supabase.storage.from('files').download(r.storagePath);
+        if(!dlErr) r.blob = blobData;
+      }
+      return r;
+    }));
+  }
+  return rows;
 }
 async function dbPut(store, value){
-  const db = await openDB();
-  const t = db.transaction(store,'readwrite');
-  t.objectStore(store).put(value);
-  return new Promise((res,rej)=>{ t.oncomplete=()=>res(value); t.onerror=()=>rej(t.error); });
+  const uid = await currentUserId();
+  const keyField = store==='meta' ? 'key' : 'id';
+  const data = { ...value };
+  delete data[keyField];
+  delete data.classId;
+  if(store === 'files' && data.blob instanceof Blob){
+    const path = `${uid}/${value.id}`;
+    const { error: upErr } = await supabase.storage.from('files').upload(path, data.blob, { upsert: true });
+    if(upErr) throw upErr;
+    data.storagePath = path;
+    delete data.blob;
+  }
+  const row = { [keyField]: value[keyField], user_id: uid, data };
+  if(store === 'files' || store === 'questions') row.class_id = value.classId ?? null;
+  const { error } = await supabase.from(store).upsert(row);
+  if(error) throw error;
+  return value;
 }
 async function dbDelete(store, key){
-  const db = await openDB();
-  const t = db.transaction(store,'readwrite');
-  t.objectStore(store).delete(key);
-  return new Promise((res,rej)=>{ t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); });
+  const uid = await currentUserId();
+  const keyField = store==='meta' ? 'key' : 'id';
+  if(store === 'files'){
+    const { data } = await supabase.from('files').select('data').eq('id', key).eq('user_id', uid).maybeSingle();
+    if(data && data.data && data.data.storagePath) await supabase.storage.from('files').remove([data.data.storagePath]);
+  }
+  const { error } = await supabase.from(store).delete().eq(keyField, key).eq('user_id', uid);
+  if(error) throw error;
 }
 async function dbDeleteWhere(store, indexName, value){
-  const db = await openDB();
-  const t = db.transaction(store,'readwrite');
-  const idx = t.objectStore(store).index(indexName);
-  const req = idx.openCursor(IDBKeyRange.only(value));
-  req.onsuccess = (e)=>{ const cur=e.target.result; if(cur){ cur.delete(); cur.continue(); } };
-  return new Promise((res,rej)=>{ t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); });
+  const uid = await currentUserId();
+  const col = indexName === 'classId' ? 'class_id' : indexName;
+  if(store === 'files'){
+    const { data } = await supabase.from('files').select('data').eq(col, value).eq('user_id', uid);
+    const paths = (data||[]).map(r=>r.data && r.data.storagePath).filter(Boolean);
+    if(paths.length) await supabase.storage.from('files').remove(paths);
+  }
+  const { error } = await supabase.from(store).delete().eq(col, value).eq('user_id', uid);
+  if(error) throw error;
 }
 
 /* ---------- state ---------- */
@@ -2820,57 +2834,74 @@ function showFatalError(title, detail){
     <div style="font-size:13.5px;line-height:1.65;white-space:pre-wrap">${esc(detail)}</div>
   `;
 }
-const LOCK_HASH = '3e183f9c921325175b7221bedd29ee5e0fd9c4bdd7c530eaff4a3ad24b6d1270';
-async function sha256Hex(str){
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+let authMode = 'signin';
+function setAuthMode(mode){
+  authMode = mode;
+  document.getElementById('auth-title').textContent = mode==='signin' ? 'Sign in' : 'Create account';
+  document.getElementById('auth-submit-btn').textContent = mode==='signin' ? 'Sign in' : 'Sign up';
+  document.getElementById('auth-switch').innerHTML = mode==='signin'
+    ? 'No account? <a data-action="auth-toggle-mode">Sign up</a>'
+    : 'Have an account? <a data-action="auth-toggle-mode">Sign in</a>';
+  document.getElementById('lock-error').textContent = '';
 }
-async function tryUnlock(){
-  const input = document.getElementById('lock-password');
+async function tryAuthSubmit(){
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
   const errEl = document.getElementById('lock-error');
-  const hash = await sha256Hex(input.value);
-  if(hash === LOCK_HASH){
-    try{ localStorage.setItem('co-unlocked', '1'); }catch(e){}
-    document.getElementById('lock-screen').style.display = 'none';
-    document.getElementById('app').style.display = '';
-    boot();
-  }else{
-    errEl.textContent = 'Wrong password';
-    input.value = '';
-    input.focus();
+  errEl.textContent = '';
+  if(!email || !password){ errEl.textContent = 'Enter email and password'; return; }
+  const btn = document.getElementById('auth-submit-btn');
+  btn.disabled = true;
+  try{
+    const { error } = authMode==='signin'
+      ? await supabase.auth.signInWithPassword({ email, password })
+      : await supabase.auth.signUp({ email, password });
+    if(error){ errEl.textContent = error.message; return; }
+    if(authMode==='signup'){
+      const { data: sessionData } = await supabase.auth.getSession();
+      if(!sessionData.session){
+        errEl.textContent = 'Account created — check your email to confirm, then sign in.';
+        setAuthMode('signin');
+        return;
+      }
+    }
+    await enterApp();
+  }finally{
+    btn.disabled = false;
   }
 }
-document.getElementById('lock-password').addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
+document.getElementById('auth-password').addEventListener('keydown', e=>{ if(e.key==='Enter') tryAuthSubmit(); });
+document.getElementById('auth-email').addEventListener('keydown', e=>{ if(e.key==='Enter') tryAuthSubmit(); });
 document.addEventListener('click', e=>{
-  const el = e.target.closest('[data-action="lock-submit"]');
-  if(el) tryUnlock();
-  const lockBtn = e.target.closest('[data-action="lock-app"]');
-  if(lockBtn){
-    try{ localStorage.removeItem('co-unlocked'); }catch(e){}
-    location.reload();
-  }
+  if(e.target.closest('[data-action="auth-submit"]')) tryAuthSubmit();
+  if(e.target.closest('[data-action="auth-toggle-mode"]')) setAuthMode(authMode==='signin' ? 'signup' : 'signin');
+  if(e.target.closest('[data-action="sign-out"]')){ supabase.auth.signOut().then(()=>location.reload()); }
 });
-let _unlocked = false;
-try{ _unlocked = localStorage.getItem('co-unlocked') === '1'; }catch(e){}
-if(_unlocked){
+async function enterApp(){
   document.getElementById('lock-screen').style.display = 'none';
   document.getElementById('app').style.display = '';
-  boot();
-}else{
-  document.getElementById('lock-password').focus();
+  await boot();
 }
+(async function start(){
+  if(!SUPABASE_URL || SUPABASE_URL.includes('YOUR-PROJECT')){
+    showFatalError(
+      'Supabase is not configured',
+      'Set SUPABASE_URL and SUPABASE_ANON_KEY near the top of the script section in index.html, using the values from your Supabase project (Project Settings > API).'
+    );
+    return;
+  }
+  const { data } = await supabase.auth.getSession();
+  if(data.session){
+    await enterApp();
+  }else{
+    document.getElementById('auth-email').focus();
+  }
+})();
 async function boot(){
   try{
     const savedTheme = localStorage.getItem('co-theme');
     if(savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
   }catch(e){}
-  if(typeof indexedDB === 'undefined'){
-    showFatalError(
-      'Local storage is unavailable',
-      'This browser is blocking local storage (IndexedDB) for this page, so classes and files can\'t be saved or loaded.\n\nTry:\n• Opening this file in Chrome or Edge\n• Turning off private/incognito mode for this page\n• Turning off strict tracking/privacy protection for this page'
-    );
-    return;
-  }
   try{
     await loadAll();
     render();
@@ -2878,7 +2909,7 @@ async function boot(){
     console.error('Classwork Organizer failed to start', err);
     showFatalError(
       'Something went wrong loading your data',
-      'Error: ' + (err && err.message ? err.message : String(err)) + '\n\nTry:\n• Reloading the page\n• Opening this file in Chrome or Edge\n• Turning off private/incognito mode for this page\n\nYour saved classes and files live in this browser\'s local storage — they are safe even if this page fails to load.'
+      'Error: ' + (err && err.message ? err.message : String(err)) + '\n\nTry reloading the page. If it keeps happening, check the browser console for details.'
     );
   }
 }
