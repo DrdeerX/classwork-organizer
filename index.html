@@ -2866,7 +2866,7 @@ async function tryAuthSubmit(){
   try{
     const { error } = authMode==='signin'
       ? await sb.auth.signInWithPassword({ email, password })
-      : await sb.auth.signUp({ email, password });
+      : await sb.auth.signUp({ email, password, options: { emailRedirectTo: window.location.href.split('#')[0] } });
     if(error){ errEl.textContent = error.message; return; }
     if(authMode==='signup'){
       const { data: sessionData } = await sb.auth.getSession();
