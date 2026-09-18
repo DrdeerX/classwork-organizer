@@ -2377,12 +2377,13 @@ function openFileViewer(f, targetPage){
   let bodyHtml;
   if(noNativeViewer){
     const units = (f.units && f.units.length) ? f.units : (f.extractedText ? [{label:null, text:f.extractedText}] : []);
-    bodyHtml = `<div style="flex:1;overflow-y:auto;background:var(--bg);padding:20px 24px;" id="file-viewer-scroll">
+    const total = units.filter(u=>u.label).length;
+    bodyHtml = `<div style="flex:1;overflow-y:auto;background:#525659;padding:28px 20px;" id="file-viewer-scroll">
       ${units.length ? units.map(u=>`
-        <div style="max-width:760px;margin:0 auto 16px;padding:16px 20px;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);" ${u.label ? `data-unit-label="${esc(u.label)}"` : ''}>
-          ${u.label ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);margin-bottom:8px">${esc(u.label)}</div>` : ''}
-          <div style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(u.text) || '<span class=\"muted\">(no text on this slide)</span>'}</div>
-        </div>`).join('') : `<div class="muted" style="text-align:center;margin-top:40px">No preview text available for this file yet.</div>`}
+        <div style="max-width:840px;margin:0 auto 24px;padding:44px 52px;background:#ffffff;border-radius:6px;box-shadow:0 6px 28px rgba(0,0,0,.35);position:relative;min-height:280px;" ${u.label ? `data-unit-label="${esc(u.label)}"` : ''}>
+          ${u.label ? `<div style="position:absolute;top:16px;right:20px;font-size:11px;font-weight:700;letter-spacing:.03em;color:#8a8f9c;background:#f1f2f5;padding:3px 10px;border-radius:20px">${esc(u.label)}${total?` of ${total}`:''}</div>` : ''}
+          <div style="font-size:14.5px;line-height:1.75;white-space:pre-wrap;color:#1c1f27">${esc(u.text) || '<span style=\"color:#9aa0ab\">(no text on this slide)</span>'}</div>
+        </div>`).join('') : `<div class="muted" style="text-align:center;margin-top:40px;color:#fff">No preview text available for this file yet.</div>`}
     </div>`;
   }else{
     let url = URL.createObjectURL(f.blob);
