@@ -330,6 +330,17 @@
     .sidebar .nav-item span, .sidebar .class-row span, .sidebar .add-class-btn span, .sidebar .theme-toggle span, .sidebar .brand span, .nav-label{ display:none; }
     .main{ padding:20px 16px 60px; }
   }
+  @media (max-width:480px){
+    html, body{ overflow-x:hidden; }
+    .sidebar{ width:60px; padding:12px 6px; }
+    .modal-box{ margin-top:0; max-width:100%; width:100%; height:100%; max-height:100%; border-radius:0; }
+    .grade-head-row, .grade-row{ grid-template-columns:1fr 54px 54px 26px; gap:5px; padding-left:8px; padding-right:8px; }
+    .grade-row input[type=number]{ padding:5px 3px; font-size:12px; }
+    .grade-num-wrap{ gap:1px; font-size:11px; }
+    .quiz-card{ padding:22px 16px; }
+    .finance-pie-body{ gap:14px; }
+    .pie-legend{ min-width:0; }
+  }
   #lock-screen{ position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:9999; }
   #lock-screen .lock-box{ width:min(320px,90vw); background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:28px 26px; text-align:center; }
   #lock-screen .lock-box h1{ font-size:16px; font-weight:700; margin:0 0 4px; }
@@ -2176,7 +2187,7 @@ function renderGoals(){
   el.innerHTML = `
     <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
       <div><h1>Goals</h1><div class="muted">Complete a goal to unlock what's next.</div></div>
-      <div style="display:flex;gap:8px;align-items:center">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <div class="streak-badge">${ICONS.flame} <span>${streak}</span> day streak</div>
         <button class="btn btn-sm" data-action="generate-goals-from-schedule">${ICONS.sparkle} Generate from schedule</button>
         <button class="btn btn-sm btn-primary" data-action="open-add-goal">${ICONS.plus} Add goal</button>
