@@ -49,13 +49,13 @@
   .nav-group{ margin-bottom:18px; }
   .nav-label{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--sidebar-text-dim); padding:0 10px; margin-bottom:6px; }
   .nav-item{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:9px 10px; border-radius:var(--radius-sm); background:transparent; border:none; color:var(--sidebar-text); font-size:13.5px; transition:transform .12s ease, background .12s ease; }
-  .nav-item:hover{ transform:scale(1.04); }
+  .nav-item:hover, .nav-item:active{ transform:scale(1.04); }
   .nav-item:hover{ background:var(--sidebar-active); }
   .nav-item.active{ background:var(--sidebar-active); color:#fff; }
   .nav-item.active svg{ stroke:var(--accent); }
   .class-list{ flex:1; overflow-y:auto; }
   .class-row{ display:flex; align-items:center; gap:9px; width:100%; padding:8px 10px; border-radius:var(--radius-sm); background:transparent; border:none; color:var(--sidebar-text); font-size:13.5px; text-align:left; transition:transform .12s ease, background .12s ease; }
-  .class-row:hover{ background:var(--sidebar-active); transform:scale(1.04); }
+  .class-row:hover, .class-row:active{ background:var(--sidebar-active); transform:scale(1.04); }
   .class-row.active{ background:var(--sidebar-active); color:#fff; font-weight:600; }
   .class-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
   .class-row span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -75,7 +75,7 @@
   .page-header{ margin-bottom:22px; }
 
   .btn{ display:inline-flex; align-items:center; gap:7px; padding:8px 14px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg-elev); color:var(--text); font-size:13.5px; font-weight:500; transition:transform .12s ease, border-color .12s ease, color .12s ease, filter .12s ease, opacity .12s ease; }
-  .btn:hover{ border-color:var(--accent); color:var(--accent); transform:scale(1.06); }
+  .btn:hover, .btn:active{ border-color:var(--accent); color:var(--accent); transform:scale(1.06); }
   .btn-primary{ background:var(--accent); border-color:var(--accent); color:var(--accent-contrast); }
   .btn-primary:hover{ opacity:.9; color:var(--accent-contrast); filter:brightness(1.05); }
   .btn-danger{ color:var(--danger); }
