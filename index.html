@@ -501,10 +501,13 @@ const sb = (typeof window.supabase !== 'undefined' && SUPABASE_URL && !SUPABASE_
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } })
   : null;
 
+let _cachedUid = null;
 async function currentUserId(){
+  if(_cachedUid) return _cachedUid;
   const { data } = await sb.auth.getSession();
   if(!data.session) throw new Error('Not signed in');
-  return data.session.user.id;
+  _cachedUid = data.session.user.id;
+  return _cachedUid;
 }
 function rowToObject(row, keyField){
   const obj = { ...row.data, [keyField]: row[keyField] };
@@ -2870,11 +2873,23 @@ async function tryAuthSubmit(){
   const btn = document.getElementById('auth-submit-btn');
   btn.disabled = true;
   try{
-    const { error } = authMode==='signin'
-      ? await sb.auth.signInWithPassword({ email, password })
-      : await sb.auth.signUp({ email, password, options: { data: { username: usernameRaw } } });
-    if(error){ errEl.textContent = error.message; return; }
-    await enterApp();
+    if(authMode==='signin'){
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if(error){ errEl.textContent = error.message; return; }
+      _cachedUid = data.session.user.id;
+      await enterApp();
+    }else{
+      const { error } = await sb.auth.signUp({ email, password, options: { data: { username: usernameRaw } } });
+      if(error){ errEl.textContent = error.message; return; }
+      await sb.auth.signOut();
+      _cachedUid = null;
+      document.getElementById('auth-password').value = '';
+      errEl.style.color = 'var(--success)';
+      errEl.textContent = 'Account created — sign in below.';
+      setAuthMode('signin');
+      document.getElementById('auth-email').value = usernameRaw;
+      document.getElementById('auth-password').focus();
+    }
   }finally{
     btn.disabled = false;
   }
@@ -2883,9 +2898,10 @@ document.getElementById('auth-password').addEventListener('keydown', e=>{ if(e.k
 document.getElementById('auth-email').addEventListener('keydown', e=>{ if(e.key==='Enter') tryAuthSubmit(); });
 document.addEventListener('click', e=>{
   if(e.target.closest('[data-action="auth-submit"]')) tryAuthSubmit();
-  if(e.target.closest('[data-action="auth-toggle-mode"]')) setAuthMode(authMode==='signin' ? 'signup' : 'signin');
-  if(e.target.closest('[data-action="sign-out"]')){ sb.auth.signOut().then(()=>location.reload()); }
+  if(e.target.closest('[data-action="auth-toggle-mode"]')){ errEl_reset(); setAuthMode(authMode==='signin' ? 'signup' : 'signin'); }
+  if(e.target.closest('[data-action="sign-out"]')){ _cachedUid = null; sb.auth.signOut().then(()=>location.reload()); }
 });
+function errEl_reset(){ const e=document.getElementById('lock-error'); e.style.color=''; }
 async function enterApp(){
   document.getElementById('lock-screen').style.display = 'none';
   document.getElementById('app').style.display = '';
@@ -2901,6 +2917,7 @@ async function enterApp(){
   }
   const { data } = await sb.auth.getSession();
   if(data.session){
+    _cachedUid = data.session.user.id;
     await enterApp();
   }else{
     document.getElementById('auth-email').focus();
