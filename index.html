@@ -498,7 +498,7 @@ const CLASS_COLORS = ['#6a5cff','#ff6b8b','#ff9f43','#2fb344','#22b8cf','#e64980
 const SUPABASE_URL = 'https://fqtxkjgggpbkjurrrbve.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_aGbgPwbYxKPeEEl-Ukz_yA_B4x3UCWm';
 const sb = (typeof window.supabase !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT'))
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } })
   : null;
 
 async function currentUserId(){
