@@ -1014,6 +1014,47 @@ function findDaysInLine(lowerLine){
   }
   return [...found];
 }
+const MONTH_NAMES = {
+  january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11,
+  ocak:0,şubat:1,subat:1,mart:2,nisan:3,mayıs:4,mayis:4,haziran:5,temmuz:6,ağustos:7,agustos:7,eylül:8,eylul:8,ekim:9,kasım:10,kasim:10,aralık:11,aralik:11,
+};
+function extractAllDates(text){
+  const dates = [];
+  const re = /\b(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})\b/g;
+  let m;
+  while((m = re.exec(text))){
+    const day=+m[1], month=+m[2], year=+m[3];
+    if(month>=1 && month<=12 && day>=1 && day<=31) dates.push(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`);
+  }
+  return dates;
+}
+function inferSyllabusYear(allDates){
+  if(!allDates.length) return new Date().getFullYear();
+  const counts = {};
+  for(const d of allDates){ const y=d.slice(0,4); counts[y]=(counts[y]||0)+1; }
+  return +Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0];
+}
+function extractNamedDates(text, year){
+  const dates = [];
+  const re = new RegExp('\\b('+Object.keys(MONTH_NAMES).join('|')+')\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b', 'gi');
+  let m;
+  while((m = re.exec(text))){
+    const month = MONTH_NAMES[m[1].toLowerCase()];
+    const day = +m[2];
+    if(month!=null && day>=1 && day<=31) dates.push(`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`);
+  }
+  return dates;
+}
+const NO_CLASS_LINE_RE = /no class|no exam|cancell?ed|will not (?:be )?(?:held|meet)|\bholiday\b|closure|\bclosed\b|tatil|iptal edil/i;
+function extractNoClassDates(text, year){
+  const out = new Set();
+  for(const line of text.split(/\n+/)){
+    if(!NO_CLASS_LINE_RE.test(line)) continue;
+    for(const d of extractAllDates(line)) out.add(d);
+    for(const d of extractNamedDates(line, year)) out.add(d);
+  }
+  return [...out];
+}
 const LOCATION_KEYWORD_RE = /\b(?:room|hall|building|bldg|location|venue|classroom|lab|laboratory|amphitheater|auditorium|oda|salon|derslik|bina|yer)\s*[:\-]?\s*([A-Za-zÇĞİÖŞÜçğıöşü0-9][A-Za-zÇĞİÖŞÜçğıöşü0-9\-\/. ]{0,30})/i;
 const LOCATION_CODE_RE = /\b([A-ZÇĞİÖŞÜ]{1,4}-?\d{2,4}[A-Z]?)\b/;
 function findLocationInLine(line, timeMatchStr){
@@ -1052,6 +1093,10 @@ async function autoScheduleFromSyllabus(c, fileRec){
   if(!fileRec.extractedText) return;
   const found = extractClassScheduleFromText(fileRec.extractedText);
   if(!found.length) return;
+  const allDates = extractAllDates(fileRec.extractedText);
+  const year = inferSyllabusYear(allDates);
+  const termEnd = allDates.length ? allDates.slice().sort().pop() : null;
+  const noClassDates = extractNoClassDates(fileRec.extractedText, year);
   const byTime = new Map();
   for(const f of found){
     const key = `${f.startTime}|${f.endTime}`;
@@ -1066,17 +1111,23 @@ async function autoScheduleFromSyllabus(c, fileRec){
       && e.startTime===startTime && e.endTime===endTime
       && days.every(d=>e.days.includes(d)) && e.days.every(d=>days.includes(d)));
     if(existing){
-      if(location && !existing.location){
-        existing.location = location;
+      let changed = false;
+      if(location && !existing.location){ existing.location = location; changed = true; }
+      if(termEnd && !existing.recurUntil){ existing.recurUntil = termEnd; changed = true; }
+      if(noClassDates.length){
+        const merged = new Set([...(existing.exceptions||[]), ...noClassDates]);
+        if(merged.size !== (existing.exceptions||[]).length){ existing.exceptions = [...merged].sort(); changed = true; }
+      }
+      if(changed){
         await dbPut('events', existing);
-        toast(`Updated ${c.name} location (${location})`);
+        toast(`Updated ${c.name} schedule details`);
       }
       continue;
     }
     const ev = {
       id: uid(), createdAt: Date.now(), title: c.name, kind:'weekly',
       days: days.sort((a,b)=>a-b), startTime, endTime, location: location||'', color: c.color,
-      recurFrom:null, recurUntil:null, classId: c.id, auto:true, sourceFileId: fileRec.id,
+      recurFrom:null, recurUntil: termEnd||null, exceptions: noClassDates, classId: c.id, auto:true, sourceFileId: fileRec.id,
     };
     await dbPut('events', ev);
     state.events.push(ev);
@@ -1766,6 +1817,7 @@ function eventsForDate(d){
       if(!ev.days || !ev.days.includes(dow)) continue;
       if(ev.recurFrom && iso < ev.recurFrom) continue;
       if(ev.recurUntil && iso > ev.recurUntil) continue;
+      if(ev.exceptions && ev.exceptions.includes(iso)) continue;
       out.push(ev);
     }
   }
