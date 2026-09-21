@@ -1014,6 +1014,16 @@ function findDaysInLine(lowerLine){
   }
   return [...found];
 }
+const LOCATION_KEYWORD_RE = /\b(?:room|hall|building|bldg|location|venue|classroom|lab|laboratory|amphitheater|auditorium|oda|salon|derslik|bina|yer)\s*[:\-]?\s*([A-Za-zÇĞİÖŞÜçğıöşü0-9][A-Za-zÇĞİÖŞÜçğıöşü0-9\-\/. ]{0,30})/i;
+const LOCATION_CODE_RE = /\b([A-ZÇĞİÖŞÜ]{1,4}-?\d{2,4}[A-Z]?)\b/;
+function findLocationInLine(line, timeMatchStr){
+  const stripped = line.replace(timeMatchStr, ' ');
+  const kw = stripped.match(LOCATION_KEYWORD_RE);
+  if(kw) return kw[1].trim().replace(/[.,;]+$/,'');
+  const code = stripped.match(LOCATION_CODE_RE);
+  if(code) return code[1];
+  return '';
+}
 function extractClassScheduleFromText(text){
   const timeRe = /(\d{1,2})[:.](\d{2})\s*(?:-|–|—|to|ile)\s*(\d{1,2})[:.](\d{2})/;
   const lines = text.split(/\n+/);
@@ -1027,7 +1037,8 @@ function extractClassScheduleFromText(text){
     if(sh>23 || eh>23 || parseInt(tm[2])>59 || parseInt(tm[4])>59) continue;
     const days = findDaysInLine(line.toLowerCase());
     if(!days.length) continue;
-    for(const d of days) results.push({day:d, startTime, endTime});
+    const location = findLocationInLine(line, tm[0]);
+    for(const d of days) results.push({day:d, startTime, endTime, location});
   }
   const seen = new Set();
   return results.filter(r=>{
@@ -1044,23 +1055,32 @@ async function autoScheduleFromSyllabus(c, fileRec){
   const byTime = new Map();
   for(const f of found){
     const key = `${f.startTime}|${f.endTime}`;
-    if(!byTime.has(key)) byTime.set(key, []);
-    byTime.get(key).push(f.day);
+    if(!byTime.has(key)) byTime.set(key, {days:[], location:''});
+    const g = byTime.get(key);
+    g.days.push(f.day);
+    if(!g.location && f.location) g.location = f.location;
   }
-  for(const [key, days] of byTime){
+  for(const [key, {days, location}] of byTime){
     const [startTime, endTime] = key.split('|');
-    const alreadyExists = state.events.some(e=>e.kind==='weekly' && e.classId===c.id
+    const existing = state.events.find(e=>e.kind==='weekly' && e.classId===c.id
       && e.startTime===startTime && e.endTime===endTime
       && days.every(d=>e.days.includes(d)) && e.days.every(d=>days.includes(d)));
-    if(alreadyExists) continue;
+    if(existing){
+      if(location && !existing.location){
+        existing.location = location;
+        await dbPut('events', existing);
+        toast(`Updated ${c.name} location (${location})`);
+      }
+      continue;
+    }
     const ev = {
       id: uid(), createdAt: Date.now(), title: c.name, kind:'weekly',
-      days: days.sort((a,b)=>a-b), startTime, endTime, location:'', color: c.color,
+      days: days.sort((a,b)=>a-b), startTime, endTime, location: location||'', color: c.color,
       recurFrom:null, recurUntil:null, classId: c.id, auto:true, sourceFileId: fileRec.id,
     };
     await dbPut('events', ev);
     state.events.push(ev);
-    toast(`Added ${c.name} to Schedule (${days.map(d=>WEEKDAY_NAMES[d]).join('/')} ${startTime}–${endTime})`);
+    toast(`Added ${c.name} to Schedule (${days.map(d=>WEEKDAY_NAMES[d]).join('/')} ${startTime}–${endTime}${location?', '+location:''})`);
   }
 }
 
