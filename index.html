@@ -1878,6 +1878,7 @@ function renderSchedule(){
         <button class="btn btn-sm btn-icon" data-action="week-prev" title="Previous week">‹</button>
         <button class="btn btn-sm" data-action="week-today">Today</button>
         <button class="btn btn-sm btn-icon" data-action="week-next" title="Next week">›</button>
+        <input type="date" id="schedule-date-jump" class="btn btn-sm" style="cursor:pointer" value="${toISODate(weekStart)}" title="Jump to date">
         <button class="btn btn-sm btn-primary" data-action="open-add-event">${ICONS.plus} Add event</button>
       </div>
     </div>
@@ -2884,6 +2885,12 @@ document.addEventListener('input', (e)=>{
 /* ---------- grade item inputs (change fires on blur/enter, then re-render stats) ---------- */
 document.addEventListener('change', async (e)=>{
   const t = e.target;
+  if(t.id === 'schedule-date-jump' && t.value){
+    const [y,m,d] = t.value.split('-').map(Number);
+    state.scheduleWeekStart = mondayOf(new Date(y, m-1, d));
+    renderSchedule();
+    return;
+  }
   const id = t.dataset && t.dataset.id;
   if(!id) return;
   if(t.classList.contains('grade-label-input')){
